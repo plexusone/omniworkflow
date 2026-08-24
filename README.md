@@ -61,12 +61,14 @@ control flow).
 | In-memory (reference/testing) | `github.com/plexusone/omniworkflow/inmemory`        | ready   |
 | Durable embedded (no cluster) | `github.com/plexusone/omniworkflow/durable`         | ready   |
 | AWS Step Functions | `github.com/plexusone/omniworkflow/stepfunctions`   | ready   |
-| Temporal           | `github.com/plexusone/omniworkflow/temporal`        | planned |
+| Temporal           | `github.com/plexusone/omniworkflow/temporal`        | ready   |
 
 A shared conformance suite (`github.com/plexusone/omniworkflow/conformance`)
 proves every provider behaves identically. The in-memory and durable providers
 run it hermetically on every `go test`; the Step Functions provider runs it
-against live AWS when credentials are configured.
+against live AWS, and the Temporal provider against a dev or real server, when
+configured. The Temporal provider's workflow logic is additionally unit-tested
+hermetically in the Temporal test environment.
 
 The **durable** provider survives process restarts with no cluster, broker, or
 AWS — it checkpoints a small snapshot (plan + the interpreter's outcome sets)
