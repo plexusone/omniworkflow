@@ -1,0 +1,68 @@
+# OmniWorkflow
+
+[![Go CI][go-ci-svg]][go-ci-url]
+[![Go Lint][go-lint-svg]][go-lint-url]
+[![Go SAST][go-sast-svg]][go-sast-url]
+[![Docs][docs-godoc-svg]][docs-godoc-url]
+[![License][license-svg]][license-url]
+
+ [go-ci-svg]: https://github.com/plexusone/omniworkflow/actions/workflows/go-ci.yaml/badge.svg?branch=main
+ [go-ci-url]: https://github.com/plexusone/omniworkflow/actions/workflows/go-ci.yaml
+ [go-lint-svg]: https://github.com/plexusone/omniworkflow/actions/workflows/go-lint.yaml/badge.svg?branch=main
+ [go-lint-url]: https://github.com/plexusone/omniworkflow/actions/workflows/go-lint.yaml
+ [go-sast-svg]: https://github.com/plexusone/omniworkflow/actions/workflows/go-sast-codeql.yaml/badge.svg?branch=main
+ [go-sast-url]: https://github.com/plexusone/omniworkflow/actions/workflows/go-sast-codeql.yaml
+ [docs-godoc-svg]: https://pkg.go.dev/badge/github.com/plexusone/omniworkflow
+ [docs-godoc-url]: https://pkg.go.dev/github.com/plexusone/omniworkflow
+ [docs-mkdoc-svg]: https://img.shields.io/badge/Go-dev%20guide-blue.svg
+ [docs-mkdoc-url]: https://plexusone.dev/omniworkflow
+ [repo-url]: https://github.com/plexusone/omniworkflow
+ [license-svg]: https://img.shields.io/badge/license-MIT-blue.svg
+ [license-url]: https://github.com/plexusone/omniworkflow/blob/main/LICENSE
+
+A provider-neutral durable-orchestration abstraction: one Go interface with
+interchangeable backends (**AWS Step Functions** and **Temporal**), so you
+write pipeline-shaped orchestration once and run it on either engine by
+configuration.
+
+OmniWorkflow follows the plexusone `Omni*` convention — provider-neutral
+capability libraries that `*Forge` products consume.
+[ActionForge](https://github.com/plexusone/actionforge) is the first consumer.
+
+## Installation
+
+```bash
+go get github.com/plexusone/omniworkflow
+```
+
+## Model
+
+You hand `Start` a **Plan** — a flat DAG of steps connected by `DependsOn`
+edges, with `Gate` steps that hold until an approval `Signal` — and register a
+**StepExecutor** callback that performs each step's work. Each provider ships a
+generic DAG interpreter plus an embedded worker, so you never author Temporal
+workflow code or Step Functions state-machine definitions.
+
+```
+Plan ──▶ WorkflowProvider.Start ──▶ [interpreter walks the DAG]
+                                          │
+                                          ▼
+                              StepExecutor.ExecuteStep (your code)
+```
+
+The `Plan` targets pipeline-shaped work; it is deliberately not a
+general-purpose workflow language (no loops, dynamic fan-out, or arbitrary
+control flow).
+
+## Providers
+
+| Provider        | Package                                  | Status      |
+| --------------- | ---------------------------------------- | ----------- |
+| AWS Step Functions | `github.com/plexusone/omniworkflow/stepfunctions` | in progress |
+| Temporal        | `github.com/plexusone/omniworkflow/temporal`      | planned     |
+
+A shared conformance suite proves both providers behave identically.
+
+## License
+
+[MIT](LICENSE)
