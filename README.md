@@ -59,17 +59,23 @@ control flow).
 | Provider           | Package                                             | Status  |
 | ------------------ | --------------------------------------------------- | ------- |
 | In-memory (reference/testing) | `github.com/plexusone/omniworkflow/inmemory`        | ready   |
+| Durable embedded (no cluster) | `github.com/plexusone/omniworkflow/durable`         | ready   |
 | AWS Step Functions | `github.com/plexusone/omniworkflow/stepfunctions`   | ready   |
 | Temporal           | `github.com/plexusone/omniworkflow/temporal`        | planned |
 
 A shared conformance suite (`github.com/plexusone/omniworkflow/conformance`)
-proves every provider behaves identically. The in-memory provider runs it
-hermetically on every `go test`; the Step Functions provider runs it against
-live AWS when credentials are configured.
+proves every provider behaves identically. The in-memory and durable providers
+run it hermetically on every `go test`; the Step Functions provider runs it
+against live AWS when credentials are configured.
 
-The in-memory provider is a reference, not a durable engine — state is lost on
-restart. For durable orchestration without AWS or a Temporal cluster, a future
-provider will wrap an embeddable engine (e.g. durabletask-go).
+The **durable** provider survives process restarts with no cluster, broker, or
+AWS — it checkpoints a small snapshot (plan + the interpreter's outcome sets)
+to a pluggable `StateStore` (a zero-dependency file store by default) after each
+wave, and resumes non-terminal runs on startup. Steps are at-least-once, so
+step executors must be idempotent. It is the low-idle-cost self-hosted option;
+a production deployment can supply a Postgres- or bbolt-backed `StateStore`.
+
+The **in-memory** provider is a non-durable reference for tests and local use.
 
 ## License
 
