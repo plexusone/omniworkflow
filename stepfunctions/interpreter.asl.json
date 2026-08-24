@@ -1,0 +1,70 @@
+{
+  "Comment": "OmniWorkflow generic DAG interpreter (wave-based). A single coordinator activity computes readiness/gates/terminal via the shared interpreter core; each wave of ready steps and awaiting gates is dispatched to the step activity as a parallel Map. Loops until the coordinator reports a terminal status.",
+  "StartAt": "Coordinate",
+  "States": {
+    "Coordinate": {
+      "Type": "Task",
+      "Resource": "${CoordinatorActivityArn}",
+      "TimeoutSeconds": 86400,
+      "Comment": "Merge the previous wave's results into progress, then compute the next decision. Output replaces the entire state blob.",
+      "Next": "CheckTerminal"
+    },
+    "CheckTerminal": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.decision.terminal",
+          "StringEquals": "SUCCEEDED",
+          "Next": "Succeeded"
+        },
+        {
+          "Variable": "$.decision.terminal",
+          "StringEquals": "FAILED",
+          "Next": "Failed"
+        },
+        {
+          "Variable": "$.decision.terminal",
+          "StringEquals": "CANCELLED",
+          "Next": "CancelledState"
+        }
+      ],
+      "Default": "DispatchWave"
+    },
+    "DispatchWave": {
+      "Type": "Map",
+      "ItemsPath": "$.decision.dispatch",
+      "MaxConcurrency": 0,
+      "Parameters": {
+        "runId.$": "$.runId",
+        "item.$": "$$.Map.Item.Value"
+      },
+      "Iterator": {
+        "StartAt": "RunItem",
+        "States": {
+          "RunItem": {
+            "Type": "Task",
+            "Resource": "${StepActivityArn}",
+            "TimeoutSeconds": 31536000,
+            "HeartbeatSeconds": 3600,
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.waveResults",
+      "Next": "Coordinate"
+    },
+    "Succeeded": {
+      "Type": "Succeed"
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "OmniWorkflowRunFailed",
+      "Cause": "one or more steps failed"
+    },
+    "CancelledState": {
+      "Type": "Fail",
+      "Error": "OmniWorkflowRunCancelled",
+      "Cause": "run cancelled"
+    }
+  }
+}
