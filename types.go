@@ -89,23 +89,29 @@ func ApproveSignal(stepID string) string {
 // Plan is a flat DAG of steps. It is deliberately not a general-purpose
 // workflow language: loops, dynamic fan-out, and arbitrary control flow are
 // out of scope. It targets pipeline-shaped work.
+//
+// The JSON tags are load-bearing: providers serialize the Plan across the
+// orchestration boundary (Step Functions carries it as execution state), so
+// the wire shape is a stable part of the contract.
 type Plan struct {
-	Steps []PlanStep
+	Steps []PlanStep `json:"steps"`
 }
 
 // PlanStep is a single unit of work in a Plan.
 type PlanStep struct {
 	// ID uniquely identifies the step within its Plan.
-	ID string
+	ID string `json:"id"`
 	// DependsOn lists step IDs that must succeed before this step is ready.
 	// Empty means the step is ready immediately.
-	DependsOn []string
+	DependsOn []string `json:"dependsOn,omitempty"`
 	// Gate, when true, makes the step hold once ready until an approval
 	// Signal (ApproveSignal(ID)) is delivered, then execute.
-	Gate bool
+	Gate bool `json:"gate,omitempty"`
 	// Input is opaque data passed to the StepExecutor verbatim.
-	// JSON-serializable.
-	Input any
+	// JSON-serializable; after crossing the provider boundary it is decoded
+	// as generic JSON (e.g. map[string]any), so executors should treat it as
+	// such rather than relying on a concrete Go type identity.
+	Input any `json:"input,omitempty"`
 }
 
 // StepExecutor performs the work of a single step. The caller registers one
