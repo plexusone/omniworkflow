@@ -31,9 +31,8 @@ type WorkflowProvider interface {
 }
 
 type StartRequest struct {
-    WorkflowType string
-    ID           string // caller-assigned idempotency key
-    Input        any    // small structured payload, not a blob
+    ID   string // caller-assigned run identity and idempotency key
+    Plan Plan   // the DAG to execute
 }
 
 type Run struct {
@@ -52,6 +51,12 @@ type Signal struct {
 `RunStatus` is the normalized vocabulary every provider must map into —
 callers never see Temporal's `WorkflowExecutionStatus` or Step Functions'
 `ExecutionStatus` directly.
+
+The `WorkflowType`/`Input any` fields from the original sketch collapsed once
+the definition plane landed here: there is exactly one generic interpreter
+workflow per provider (so callers never name a workflow type), and the unit
+of work is the typed `Plan` rather than an opaque payload. Per-step data
+lives in `PlanStep.Input`; the run identity is `StartRequest.ID`.
 
 ### Definition plane: Plan + StepExecutor + embedded worker
 
