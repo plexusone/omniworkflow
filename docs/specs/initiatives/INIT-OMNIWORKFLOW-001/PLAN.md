@@ -15,25 +15,37 @@
 
 ## Build Order
 
-### Phase 1 — Interface, Providers & Conformance Suite
+### Phase 1 — Interface, Interpreter, Providers & Conformance Suite
 
-Single phase: the interface, both providers, and the suite that proves they
-agree are one unit of work — a provider without conformance proof isn't
-done, and the interface without a second provider risks over-fitting to
-Temporal alone.
+Single phase: the interface, the shared interpreter core, both providers,
+and the suite that proves they agree are one unit of work — a provider
+without conformance proof isn't done, and the interface without a second
+provider risks over-fitting to Temporal alone. The conformance suite's
+skeleton should be written alongside the interface (item 2) and run
+continuously as the providers develop — its position at the end of the
+build order is a completion gate, not a sequencing instruction.
 
 1. `RMI-OMNIWORKFLOW-001` Library scaffolding: `go.mod`, package layout, CI
    and lint config per org conventions.
 2. `RMI-OMNIWORKFLOW-002` `WorkflowProvider` interface and shared types
-   (`StartRequest`, `Run`, `Signal`, normalized `RunStatus`).
-3. `RMI-OMNIWORKFLOW-003` Temporal provider implementation.
-4. `RMI-OMNIWORKFLOW-004` AWS Step Functions provider implementation,
-   including task-token signal bridging for mid-execution approvals.
-5. `RMI-OMNIWORKFLOW-005` Conformance test suite, run against both providers.
+   (`StartRequest`, `Run`, `Signal`, normalized `RunStatus`, `Plan`,
+   `PlanStep`, `StepExecutor`).
+3. `RMI-OMNIWORKFLOW-006` Shared DAG-interpreter core: provider-independent
+   readiness/gate/failure-propagation semantics as a reusable package.
+4. `RMI-OMNIWORKFLOW-003` Temporal provider: control-plane mapping plus
+   embedded worker hosting the interpreter workflow and executor activity.
+5. `RMI-OMNIWORKFLOW-007` Step Functions state-machine template and one-time
+   provisioning helper (the ASL that drives SFN Activity tasks).
+6. `RMI-OMNIWORKFLOW-004` Step Functions provider: control-plane mapping,
+   Activity-polling worker, and task-token signal bridging for gates.
+7. `RMI-OMNIWORKFLOW-005` Conformance test suite (steps, ordering, gates,
+   cancel, failure, idempotent start), run against both providers.
 
 **Exit criteria:** both providers pass the identical conformance suite; a
-caller can start/get/signal/cancel a workflow through the interface alone,
-with zero provider-specific types in its own code.
+caller can start a `Plan`, watch its steps execute through a registered
+`StepExecutor`, approve a gate, and cancel — through the interface alone,
+with zero provider-specific types (and zero Temporal workflow code or ASL)
+in its own code.
 
 ## Risks and Mitigations
 
@@ -51,3 +63,6 @@ single early consumer risk of over-fitting (keep `Input`/`Output` opaque).
 - Extraction of a shared retry/timeout policy vocabulary if a second consumer
   surfaces needs the current minimal `Metadata` escape hatch doesn't cover
   cleanly.
+- `Plan` expressiveness extensions (per-step retry policies, dynamic
+  fan-out, loops) — driven by concrete consumer demand, per the TRD's
+  expressiveness-ceiling risk; never added speculatively.

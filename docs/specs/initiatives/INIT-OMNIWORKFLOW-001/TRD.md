@@ -53,18 +53,64 @@ type Signal struct {
 callers never see Temporal's `WorkflowExecutionStatus` or Step Functions'
 `ExecutionStatus` directly.
 
-### Providers
+### Definition plane: Plan + StepExecutor + embedded worker
 
-- **`omniworkflow/temporal`**: `Start` maps to `StartWorkflow`; `Signal` maps
-  to Temporal signals; `Cancel` maps to `CancelWorkflow`; long waits are
-  native (Temporal timers). Requires a configured Temporal client/cluster.
-- **`omniworkflow/stepfunctions`**: `Start` maps to `StartExecution`;
-  `Signal` maps to `SendTaskSuccess`/callback-token resumption for a waiting
-  state (Step Functions has no native mid-execution signal primitive — this
-  is the provider's job to bridge, not the caller's); `Cancel` maps to
-  `StopExecution`. Requires AWS credentials and a pre-provisioned state
-  machine (or a state-machine-per-workflow-type template the provider
-  manages).
+The control-plane interface alone starts nothing runnable — Temporal needs
+deterministic workflow code polled by a worker; Step Functions needs a state
+machine and something to execute its tasks. OmniWorkflow owns this too
+(decided at spec review): each provider ships a **generic DAG-interpreter
+workflow body**, so callers never author Temporal workflow code or ASL.
+
+```go
+type Plan struct {
+    Steps []PlanStep
+}
+
+type PlanStep struct {
+    ID        string
+    DependsOn []string // step IDs; empty = ready immediately
+    Gate      bool     // true = hold until Signal("approve:"+ID) before executing
+    Input     any      // opaque, passed to the executor verbatim
+}
+
+type StepExecutor interface {
+    ExecuteStep(ctx context.Context, runID string, step PlanStep) (output any, err error)
+}
+```
+
+`StartRequest.Input` carries a `Plan`. The caller registers one
+`StepExecutor` (ActionForge's invokes Dagger) and embeds the provider's
+**worker** in its own process — `worker := provider.NewWorker(executor);
+worker.Start(ctx)`. Both backends map onto the same polling shape:
+
+- **Temporal**: the worker hosts one generic interpreter workflow plus one
+  activity that delegates to the `StepExecutor`. Interpreter semantics
+  (readiness, gates, failure propagation) run as deterministic workflow code;
+  the executor runs inside the activity with heartbeats for long steps.
+- **Step Functions**: a generic state machine template (provisioned once per
+  deployment by a provider helper) drives **SFN Activities** — the worker
+  polls `GetActivityTask` for step tasks and completes them with
+  `SendTaskSuccess`/`SendTaskFailure`. SFN Activities are the same
+  outbound-only polling model as Temporal task queues, so a self-hosted
+  process behind NAT works identically on both providers.
+
+The interpreter core (which steps are ready, gate handling, what happens on
+step failure) is a shared provider-independent package so the two providers
+cannot drift semantically — Temporal runs it inside workflow code; the SFN
+state machine encodes the same transitions.
+
+### Providers (control plane mapping)
+
+- **`omniworkflow/temporal`**: `Start` maps to `StartWorkflow` (generic
+  interpreter workflow type); `Signal` maps to Temporal signals (gates wait
+  on them); `Cancel` maps to `CancelWorkflow`; long waits are native
+  (Temporal timers). Requires a configured Temporal client/cluster.
+- **`omniworkflow/stepfunctions`**: `Start` maps to `StartExecution` on the
+  provisioned interpreter state machine; `Signal` maps to task-token
+  resumption (`SendTaskSuccess` on the gate's waiting task — Step Functions
+  has no native mid-execution signal primitive; bridging it is the
+  provider's job, not the caller's); `Cancel` maps to `StopExecution`.
+  Requires AWS credentials and the one-time state-machine provisioning step.
 
 ### Conformance suite
 
@@ -72,12 +118,17 @@ A single behavioral test suite (`omniworkflow/conformance`) that both
 provider packages import and run against a live or test-harness instance of
 their backend:
 
-1. Start → Get returns `RUNNING` then a terminal status.
-2. Signal delivered while running is observed by the workflow logic.
-3. Cancel transitions to `CANCELLED` and stops further execution.
-4. A failing workflow surfaces as `FAILED` with a retrievable error, not a
-   provider-specific panic/exception shape.
-5. Idempotent `Start` with the same ID does not create a duplicate execution.
+1. Start a `Plan` → Get returns `RUNNING` then a terminal status.
+2. Steps execute through the registered `StepExecutor` in dependency order;
+   independent steps may run concurrently, dependents never before their
+   prerequisites.
+3. A `Gate` step holds until its approval `Signal` arrives, then executes;
+   the signal is delivered mid-execution, not queued for a restart.
+4. Cancel transitions to `CANCELLED` and no further steps execute.
+5. A step returning an error surfaces the run as `FAILED` with a retrievable
+   error (not a provider-specific panic/exception shape), and downstream
+   dependents do not execute.
+6. Idempotent `Start` with the same ID does not create a duplicate execution.
 
 This suite is the actual product: proving the abstraction holds, not just
 declaring it in an interface.
@@ -88,7 +139,16 @@ declaring it in an interface.
   input require modeling a wait state with a task token and bridging
   `Signal()` to `SendTaskSuccess`/`SendTaskFailure`. This is real
   provider-side complexity, not a thin adapter — budget for it accordingly
-  and cover it explicitly in the conformance suite (item 2 above).
+  and cover it explicitly in the conformance suite (item 3 above).
+- **Interpreter semantics can drift between providers.** Temporal expresses
+  the DAG walk as workflow code; Step Functions encodes it in a state
+  machine. Mitigated by the shared provider-independent interpreter-core
+  package (single source of truth for readiness/gate/failure rules) and by
+  conformance items 2–5 exercising exactly those rules on both backends.
+- **Expressiveness ceiling of the flat Plan.** Consumers will eventually ask
+  for loops, dynamic fan-out, or per-step retry policies. Accepted for v1:
+  the Plan targets pipeline-shaped work (PRD Non-Goals); extending it is a
+  deliberate follow-on, not scope creep inside this initiative.
 - **Temporal and Step Functions diverge in retry/timeout semantics.**
   Mitigated by keeping the interface's retry/timeout surface minimal (provider
   defaults apply unless a caller opts into provider-specific configuration via

@@ -25,6 +25,14 @@ established pattern).
   Temporal provider and an AWS Step Functions provider, both required to pass
   the same behavioral contract test suite — not one provider now with the
   other deferred.
+- **Own the definition plane, not just the control plane.** Each provider
+  ships a generic DAG-interpreter workflow body: callers hand `Start` a
+  `Plan` (a flat step DAG with `needs` edges and approval gates) and register
+  a `StepExecutor` callback; the provider's embedded worker walks the DAG and
+  invokes the executor per step. Callers never write Temporal workflow code
+  or Step Functions ASL — without this, "provider-neutral" would be false
+  advertising, since every consumer would still author per-provider workflow
+  bodies.
 - **Normalize the common 80–90%, not force artificial parity.** Long waits,
   signals/approvals, retries, and cancellation must behave identically from
   the caller's perspective. Provider-specific capabilities that don't
@@ -41,6 +49,11 @@ established pattern).
 
 ## Non-Goals (this initiative)
 
+- A general-purpose workflow programming model. The `Plan` is deliberately a
+  flat step DAG with dependency edges and approval gates — enough for
+  pipeline-shaped work. Loops, dynamic fan-out, and arbitrary control flow
+  are not in scope; a consumer needing those writes provider-native workflow
+  code outside this library.
 - Additional providers beyond Temporal and Step Functions (Azure Durable
   Functions, etc.) — added later if a concrete consumer needs one, following
   the same conformance-suite discipline.
@@ -67,8 +80,10 @@ established pattern).
 ## Success Criteria
 
 - A single caller-facing test suite (the conformance suite) passes
-  identically against both providers: start a workflow, observe its status,
-  signal it (approval), cancel it, and observe failure propagation.
+  identically against both providers: start a `Plan`, observe step execution
+  through a registered `StepExecutor` in dependency order, hold at an
+  approval gate until signaled, cancel mid-run, and observe failure
+  propagation — all with the same caller code.
 - ActionForge's Phase 2 integration test (toy pipeline, build → test →
   package) runs unmodified against both providers by swapping only
   configuration.
