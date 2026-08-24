@@ -56,12 +56,20 @@ control flow).
 
 ## Providers
 
-| Provider        | Package                                  | Status      |
-| --------------- | ---------------------------------------- | ----------- |
-| AWS Step Functions | `github.com/plexusone/omniworkflow/stepfunctions` | in progress |
-| Temporal        | `github.com/plexusone/omniworkflow/temporal`      | planned     |
+| Provider           | Package                                             | Status  |
+| ------------------ | --------------------------------------------------- | ------- |
+| In-memory (reference/testing) | `github.com/plexusone/omniworkflow/inmemory`        | ready   |
+| AWS Step Functions | `github.com/plexusone/omniworkflow/stepfunctions`   | ready   |
+| Temporal           | `github.com/plexusone/omniworkflow/temporal`        | planned |
 
-A shared conformance suite proves both providers behave identically.
+A shared conformance suite (`github.com/plexusone/omniworkflow/conformance`)
+proves every provider behaves identically. The in-memory provider runs it
+hermetically on every `go test`; the Step Functions provider runs it against
+live AWS when credentials are configured.
+
+The in-memory provider is a reference, not a durable engine — state is lost on
+restart. For durable orchestration without AWS or a Temporal cluster, a future
+provider will wrap an embeddable engine (e.g. durabletask-go).
 
 ## License
 
